@@ -1,0 +1,16 @@
+{
+  "name": "discord-mod-bot",
+  "version": "1.0.0",
+  "description": "A moderation-focused Discord bot",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.js",
+    "dev": "bun --watch src/index.js",
+    "test": "bun scripts/verify-moderation-workflows.mjs"
+  },
+  "dependencies": {
+    "discord.js": "^14.18.0",
+    "ms": "^2.1.3"
+  }
+}

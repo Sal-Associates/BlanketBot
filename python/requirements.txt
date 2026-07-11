@@ -1,0 +1,6 @@
+discord.py>=2.3,<3
+aiosqlite>=0.20
+python-dotenv>=1.0
+pytest>=8.0
+pytest-asyncio>=0.24
+ruff>=0.8

@@ -1,0 +1,25 @@
+# Secrets
+.env
+**/.env
+
+# Python
+python/.venv/
+python/__pycache__/
+python/**/__pycache__/
+python/.pytest_cache/
+python/.ruff_cache/
+python/**/*.pyc
+python/data/*.sqlite3
+python/data/*.sqlite3-shm
+python/data/*.sqlite3-wal
+
+# Node/Bun
+node-bun/node_modules/
+node-bun/data/store.json
+node-bun/data/store.json.tmp
+node-bun/data/store.json.bak
+node-bun/data/store.json.corrupt-*
+
+# General
+.DS_Store
+Thumbs.db
