@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bot*"]
+
+[project]
+name = "discord-mod-bot"
+version = "0.1.0"
+description = "Python Discord moderation bot (migration from legacy JS reference)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "discord.py>=2.3,<3",
+    "aiosqlite>=0.20",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+src = ["bot", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["B008", "SIM105", "SIM108", "UP046", "SIM102"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/import_legacy_json.py" = ["E402"]
+
+[tool.ruff.format]
+quote-style = "double"
