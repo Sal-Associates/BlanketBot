@@ -1,8 +1,8 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from checks import moderator_check, administrator_check
 import db
+from checks import moderator_check, slash_mod_check
 
 
 class Notes(commands.Cog):
@@ -11,7 +11,7 @@ class Notes(commands.Cog):
 
     @app_commands.command(name="note", description="Add a staff note for a member")
     @app_commands.describe(member="Who the note is about", content="Note content")
-    @app_commands.default_permissions(kick_members=True)
+    @app_commands.check(slash_mod_check)
     async def slash_note(self, interaction: discord.Interaction, member: discord.Member, content: str):
         with db.get_db() as conn:
             note_id = conn.execute(
@@ -22,7 +22,7 @@ class Notes(commands.Cog):
 
     @app_commands.command(name="notes", description="View notes for a member")
     @app_commands.describe(member="Who to check")
-    @app_commands.default_permissions(kick_members=True)
+    @app_commands.check(slash_mod_check)
     async def slash_notes(self, interaction: discord.Interaction, member: discord.Member):
         with db.get_db() as conn:
             rows = conn.execute(
@@ -33,22 +33,16 @@ class Notes(commands.Cog):
         if not rows:
             await interaction.response.send_message(f"No notes for **{member}**.", ephemeral=True)
             return
-        lines = [
-            f"`#{row['id']}` {row['content']} — <@{row['author_id']}> on {row['created_at'][:10]}"
-            for row in rows
-        ]
+        lines = [f"`#{r['id']}` {r['content']} — <@{r['author_id']}> on {r['created_at'][:10]}" for r in rows]
         embed = discord.Embed(title=f"Notes for {member}", description="\n".join(lines), color=0xEB459E)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="notedel", description="Delete a note by ID")
     @app_commands.describe(note_id="Note ID to delete")
-    @app_commands.default_permissions(kick_members=True)
+    @app_commands.check(slash_mod_check)
     async def slash_notedel(self, interaction: discord.Interaction, note_id: int):
         with db.get_db() as conn:
-            row = conn.execute(
-                "SELECT id FROM notes WHERE id = ? AND guild_id = ?",
-                (note_id, interaction.guild.id)
-            ).fetchone()
+            row = conn.execute("SELECT id FROM notes WHERE id = ? AND guild_id = ?", (note_id, interaction.guild.id)).fetchone()
             if not row:
                 await interaction.response.send_message("Note not found.", ephemeral=True)
                 return
@@ -82,22 +76,20 @@ class Notes(commands.Cog):
         if not rows:
             await ctx.send(f"No notes for **{member}**.")
             return
-        lines = [
-            f"`#{row['id']}` {row['content']} — <@{row['author_id']}> on {row['created_at'][:10]}"
-            for row in rows
-        ]
+        lines = [f"`#{r['id']}` {r['content']} — <@{r['author_id']}> on {r['created_at'][:10]}" for r in rows]
         embed = discord.Embed(title=f"Notes for {member}", description="\n".join(lines), color=0xEB459E)
         await ctx.send(embed=embed)
 
     @prefix_note.command(name="edit")
     @moderator_check()
     async def note_edit(self, ctx, note_id: str, *, content: str):
-        parsed = int(note_id.replace("#", ""))
+        try:
+            parsed = int(note_id.replace("#", ""))
+        except ValueError:
+            await ctx.send("❌ Invalid note ID.")
+            return
         with db.get_db() as conn:
-            row = conn.execute(
-                "SELECT id FROM notes WHERE id = ? AND guild_id = ?",
-                (parsed, ctx.guild.id)
-            ).fetchone()
+            row = conn.execute("SELECT id FROM notes WHERE id = ? AND guild_id = ?", (parsed, ctx.guild.id)).fetchone()
             if not row:
                 await ctx.send("Note not found.")
                 return
@@ -107,12 +99,13 @@ class Notes(commands.Cog):
     @prefix_note.command(name="del")
     @moderator_check()
     async def note_del(self, ctx, note_id: str):
-        parsed = int(note_id.replace("#", ""))
+        try:
+            parsed = int(note_id.replace("#", ""))
+        except ValueError:
+            await ctx.send("❌ Invalid note ID.")
+            return
         with db.get_db() as conn:
-            row = conn.execute(
-                "SELECT id FROM notes WHERE id = ? AND guild_id = ?",
-                (parsed, ctx.guild.id)
-            ).fetchone()
+            row = conn.execute("SELECT id FROM notes WHERE id = ? AND guild_id = ?", (parsed, ctx.guild.id)).fetchone()
             if not row:
                 await ctx.send("Note not found.")
                 return
@@ -122,8 +115,6 @@ class Notes(commands.Cog):
     async def cog_command_error(self, ctx, error):
         if isinstance(error, commands.MemberNotFound):
             await ctx.send("Member not found.")
-        elif isinstance(error, commands.MissingPermissions):
-            await ctx.send("You don't have permission to do that.")
         elif isinstance(error, commands.MissingRequiredArgument):
             await ctx.send(f"Missing argument: `{error.param.name}`.")
 

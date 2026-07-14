@@ -3,7 +3,6 @@ import discord
 from discord.ext import commands
 import db
 
-# env var kept as fallback for servers that haven't run ?settings logchannel yet
 _FALLBACK_LOG_CHANNEL = int(os.getenv("LOG_CHANNEL_ID", 0))
 
 ACTION_COLORS = {
@@ -16,6 +15,7 @@ ACTION_COLORS = {
     "softban":          discord.Color.dark_red(),
     "lock":             discord.Color.dark_gray(),
     "unlock":           discord.Color.light_gray(),
+    "purge":            discord.Color.greyple(),
     "lockdown_enable":  discord.Color.red(),
     "lockdown_disable": discord.Color.green(),
 }
@@ -25,14 +25,14 @@ class ModLog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    def _get_log_channel_id(self, guild_id: int) -> int:
+    def _log_channel_id(self, guild_id: int) -> int:
         settings = db.get_guild_settings(guild_id)
         if settings and settings["log_channel"]:
             return settings["log_channel"]
         return _FALLBACK_LOG_CHANNEL
 
     async def post(self, guild: discord.Guild, embed: discord.Embed):
-        channel_id = self._get_log_channel_id(guild.id)
+        channel_id = self._log_channel_id(guild.id)
         if not channel_id:
             return
         channel = guild.get_channel(channel_id)
@@ -41,28 +41,36 @@ class ModLog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_mod_action(self, action: str, moderator, target, reason: str | None, guild: discord.Guild, duration: str = None):
+        if reason and len(reason) > 1000:
+            reason = reason[:1000]
         with db.get_db() as conn:
-            case_number = conn.execute(
-                "SELECT COALESCE(MAX(case_number), 0) + 1 FROM mod_actions WHERE guild_id = ?",
-                (guild.id,)
-            ).fetchone()[0]
+            case_number = db.next_case_number(conn, guild.id)
             conn.execute(
-                "INSERT INTO mod_actions (guild_id, case_number, action, target_id, moderator_id, reason, duration) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO mod_actions (guild_id, case_number, action, target_id, moderator_id, reason, duration) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (guild.id, case_number, action, target.id, moderator.id, reason, duration)
             )
 
         embed = discord.Embed(
-            title=f"Case #{case_number} — {action.capitalize()}",
+            title=f"Case #{case_number} — {action.replace('_', ' ').capitalize()}",
             color=ACTION_COLORS.get(action, discord.Color.blurple()),
             timestamp=discord.utils.utcnow()
         )
-        embed.add_field(name="User", value=f"{target} ({target.id})", inline=True)
+
+        if isinstance(target, (discord.Member, discord.User)):
+            embed.add_field(name="User", value=f"{target} ({target.id})", inline=True)
+        elif isinstance(target, discord.abc.GuildChannel):
+            embed.add_field(name="Channel", value=f"{target.mention} ({target.id})", inline=True)
+        elif isinstance(target, discord.Guild):
+            embed.add_field(name="Server", value=f"{target.name} ({target.id})", inline=True)
+        else:
+            embed.add_field(name="Target", value=f"{target}", inline=True)
+
         embed.add_field(name="Moderator", value=f"{moderator} ({moderator.id})", inline=True)
         if duration:
             embed.add_field(name="Duration", value=duration, inline=True)
         if reason:
             embed.add_field(name="Reason", value=reason, inline=False)
+
         await self.post(guild, embed)
 
     @commands.Cog.listener()

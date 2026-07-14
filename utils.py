@@ -76,3 +76,16 @@ def role_check(actor: discord.Member, member: discord.Member) -> bool:
     if actor.guild_permissions.administrator:
         return True
     return actor.top_role > member.top_role
+
+
+async def auto_unmute(mute_id: int, member, role, delay: float):
+    """Shared timed-mute expiry logic used by moderation.py and bot.py."""
+    import asyncio
+    import db
+    await asyncio.sleep(delay)
+    try:
+        await member.remove_roles(role, reason="Mute expired")
+    except Exception:
+        pass
+    with db.get_db() as conn:
+        conn.execute("DELETE FROM timed_mutes WHERE id = ?", (mute_id,))

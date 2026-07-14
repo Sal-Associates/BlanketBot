@@ -1,8 +1,8 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from checks import moderator_check, administrator_check
 import db
+from checks import moderator_check, administrator_check, slash_mod_check
 
 
 class Channel(commands.Cog):
@@ -13,48 +13,30 @@ class Channel(commands.Cog):
         if not isinstance(channel, discord.TextChannel | discord.Thread):
             return False, "Can only lock text channels or threads."
         everyone = guild.default_role
+        overwrite = channel.overwrites_for(everyone)
+        db.save_permission_snapshot(guild.id, channel.id, "lock", overwrite.send_messages)
         try:
             await channel.set_permissions(everyone, send_messages=False)
         except discord.Forbidden:
             return False, "I don't have permission to lock that channel."
-
-        with db.get_db() as conn:
-            case_number = conn.execute(
-                "SELECT COALESCE(MAX(case_number), 0) + 1 FROM mod_actions WHERE guild_id = ?",
-                (guild.id,)
-            ).fetchone()[0]
-            conn.execute(
-                "INSERT INTO mod_actions (guild_id, case_number, action, target_id, moderator_id, reason) VALUES (?, ?, ?, ?, ?, ?)",
-                (guild.id, case_number, "lock", channel.id, actor.id, "Channel locked")
-            )
-        return True, f"🔒 Locked {channel.mention} — Case #{case_number}."
+        self.bot.dispatch("mod_action", "lock", actor, channel, None, guild)
+        return True, f"🔒 Locked {channel.mention}."
 
     async def _unlock(self, channel, actor, guild):
         if not isinstance(channel, discord.TextChannel | discord.Thread):
             return False, "Can only unlock text channels or threads."
         everyone = guild.default_role
-        overwrite = channel.overwrites_for(everyone)
-        if overwrite.send_messages is not False:
-            return False, "That channel isn't locked."
+        restore = db.pop_permission_snapshot(guild.id, channel.id, "lock")
         try:
-            await channel.set_permissions(everyone, send_messages=None)
+            await channel.set_permissions(everyone, send_messages=restore)
         except discord.Forbidden:
             return False, "I don't have permission to unlock that channel."
+        self.bot.dispatch("mod_action", "unlock", actor, channel, None, guild)
+        return True, f"🔓 Unlocked {channel.mention}."
 
-        with db.get_db() as conn:
-            case_number = conn.execute(
-                "SELECT COALESCE(MAX(case_number), 0) + 1 FROM mod_actions WHERE guild_id = ?",
-                (guild.id,)
-            ).fetchone()[0]
-            conn.execute(
-                "INSERT INTO mod_actions (guild_id, case_number, action, target_id, moderator_id, reason) VALUES (?, ?, ?, ?, ?, ?)",
-                (guild.id, case_number, "unlock", channel.id, actor.id, "Channel unlocked")
-            )
-        return True, f"🔓 Unlocked {channel.mention} — Case #{case_number}."
-
-    @app_commands.command(name="lock", description="Lock a channel (deny @everyone from sending messages)")
+    @app_commands.command(name="lock", description="Lock a channel")
     @app_commands.describe(channel="Channel to lock (defaults to current)")
-    @app_commands.default_permissions(manage_channels=True)
+    @app_commands.check(slash_mod_check)
     async def slash_lock(self, interaction: discord.Interaction, channel: discord.TextChannel = None):
         target = channel or interaction.channel
         ok, msg = await self._lock(target, interaction.user, interaction.guild)
@@ -62,7 +44,7 @@ class Channel(commands.Cog):
 
     @app_commands.command(name="unlock", description="Unlock a channel")
     @app_commands.describe(channel="Channel to unlock (defaults to current)")
-    @app_commands.default_permissions(manage_channels=True)
+    @app_commands.check(slash_mod_check)
     async def slash_unlock(self, interaction: discord.Interaction, channel: discord.TextChannel = None):
         target = channel or interaction.channel
         ok, msg = await self._unlock(target, interaction.user, interaction.guild)
@@ -70,9 +52,9 @@ class Channel(commands.Cog):
 
     @app_commands.command(name="slowmode", description="Set slowmode for a channel (0 to disable)")
     @app_commands.describe(seconds="Delay in seconds (0-21600)", channel="Channel (defaults to current)")
-    @app_commands.default_permissions(manage_channels=True)
+    @app_commands.check(slash_mod_check)
     async def slash_slowmode(self, interaction: discord.Interaction, seconds: int, channel: discord.TextChannel = None):
-        if seconds < 0 or seconds > 21600:
+        if not (0 <= seconds <= 21600):
             await interaction.response.send_message("Seconds must be between 0 and 21600.", ephemeral=True)
             return
         target = channel or interaction.channel
@@ -81,28 +63,26 @@ class Channel(commands.Cog):
         await interaction.response.send_message(msg)
 
     @commands.group(name="channel", invoke_without_command=True)
-    @administrator_check()
+    @moderator_check()
     async def prefix_channel(self, ctx):
         await ctx.send("❌ Usage: `?channel lock|unlock|slowmode`")
 
     @prefix_channel.command(name="lock")
-    @administrator_check()
+    @moderator_check()
     async def channel_lock(self, ctx, channel: discord.TextChannel = None):
-        target = channel or ctx.channel
-        _, msg = await self._lock(target, ctx.author, ctx.guild)
+        _, msg = await self._lock(channel or ctx.channel, ctx.author, ctx.guild)
         await ctx.send(msg)
 
     @prefix_channel.command(name="unlock")
-    @administrator_check()
+    @moderator_check()
     async def channel_unlock(self, ctx, channel: discord.TextChannel = None):
-        target = channel or ctx.channel
-        _, msg = await self._unlock(target, ctx.author, ctx.guild)
+        _, msg = await self._unlock(channel or ctx.channel, ctx.author, ctx.guild)
         await ctx.send(msg)
 
     @prefix_channel.command(name="slowmode")
-    @administrator_check()
+    @moderator_check()
     async def channel_slowmode(self, ctx, seconds: int, channel: discord.TextChannel = None):
-        if seconds < 0 or seconds > 21600:
+        if not (0 <= seconds <= 21600):
             await ctx.send("Seconds must be between 0 and 21600.")
             return
         target = channel or ctx.channel
@@ -114,7 +94,7 @@ class Channel(commands.Cog):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("You don't have permission to do that.")
         elif isinstance(error, commands.BadArgument):
-            await ctx.send(f"Bad argument: {error}")
+            await ctx.send(f"❌ {error}")
 
 
 async def setup(bot):

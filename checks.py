@@ -1,4 +1,5 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
 import db
 
@@ -28,6 +29,7 @@ def _is_admin(member: discord.Member, guild_id: int) -> bool:
     return any(row["role_id"] in member_role_ids for row in rows)
 
 
+# prefix command checks
 def moderator_check():
     async def predicate(ctx: commands.Context) -> bool:
         if not isinstance(ctx.author, discord.Member):
@@ -46,3 +48,20 @@ def administrator_check():
             raise commands.CheckFailure("You don't have permission to use this command.")
         return True
     return commands.check(predicate)
+
+
+# slash command checks — replaces @app_commands.default_permissions so staff roles work
+async def slash_mod_check(interaction: discord.Interaction) -> bool:
+    if not isinstance(interaction.user, discord.Member):
+        raise app_commands.CheckFailure("This command can only be used in a server.")
+    if _is_mod(interaction.user, interaction.guild_id):
+        return True
+    raise app_commands.CheckFailure("You don't have permission to use this command.")
+
+
+async def slash_admin_check(interaction: discord.Interaction) -> bool:
+    if not isinstance(interaction.user, discord.Member):
+        raise app_commands.CheckFailure("This command can only be used in a server.")
+    if _is_admin(interaction.user, interaction.guild_id):
+        return True
+    raise app_commands.CheckFailure("You don't have permission to use this command.")

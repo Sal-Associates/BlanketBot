@@ -40,11 +40,13 @@ class Automod(commands.Cog):
                 (guild_id, channel_id)
             ).fetchone():
                 return True
-            for role_id in role_ids:
-                if conn.execute(
-                    "SELECT 1 FROM automod_ignored WHERE guild_id = ? AND type = 'role' AND target_id = ?",
-                    (guild_id, role_id)
-                ).fetchone():
+            if role_ids:
+                placeholders = ",".join("?" * len(role_ids))
+                row = conn.execute(
+                    f"SELECT 1 FROM automod_ignored WHERE guild_id = ? AND type = 'role' AND target_id IN ({placeholders})",
+                    (guild_id, *role_ids)
+                ).fetchone()
+                if row:
                     return True
         return False
 
@@ -149,13 +151,21 @@ class Automod(commands.Cog):
                 pass
             try:
                 await message.channel.send(
-                    f"{member.mention} Your message was removed: {reason}.",
+                    f"{member.mention} Your message was removed for violating server rules.",
                     delete_after=5
                 )
             except discord.HTTPException:
                 pass
 
+    _ALLOWED_COLUMNS = frozenset({
+        'automod_enabled', 'anti_spam', 'anti_caps',
+        'anti_invite', 'anti_mention', 'caps_threshold',
+        'spam_count', 'spam_window', 'mention_threshold',
+    })
+
     def _toggle(self, guild_id: int, column: str, value: int):
+        if column not in self._ALLOWED_COLUMNS:
+            raise ValueError(f"Disallowed column: {column}")
         db.ensure_guild_settings(guild_id)
         with db.get_db() as conn:
             conn.execute(f"UPDATE guild_settings SET {column} = ? WHERE guild_id = ?", (value, guild_id))
@@ -539,6 +549,8 @@ class Automod(commands.Cog):
         await ctx.send(f"✅ Reset **{target}** threshold(s) to defaults.")
 
     def _set_threshold(self, guild_id, column, value, min_val, max_val):
+        if column not in self._ALLOWED_COLUMNS:
+            raise ValueError(f"Disallowed column: {column}")
         if not (min_val <= value <= max_val):
             return False, f"Must be between {min_val} and {max_val}."
         db.ensure_guild_settings(guild_id)

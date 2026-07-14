@@ -1,11 +1,12 @@
 import asyncio
+import time
 import discord
 from discord import app_commands
 from discord.ext import commands
 from datetime import timedelta
 import db
-from checks import moderator_check, administrator_check
-from utils import parse_duration, format_duration, role_check
+from checks import moderator_check, administrator_check, slash_mod_check, slash_admin_check
+from utils import parse_duration, format_duration, role_check, auto_unmute as _auto_unmute
 
 
 class Moderation(commands.Cog):
@@ -17,13 +18,6 @@ class Moderation(commands.Cog):
         if not settings or not settings["mute_role_id"]:
             return None
         return guild.get_role(settings["mute_role_id"])
-
-    async def _auto_unmute(self, member: discord.Member, role: discord.Role, delay: float):
-        await asyncio.sleep(delay)
-        try:
-            await member.remove_roles(role, reason="Mute duration expired")
-        except discord.HTTPException:
-            pass
 
     async def _kick(self, actor, member, reason, guild):
         if not role_check(actor, member):
@@ -65,21 +59,29 @@ class Moderation(commands.Cog):
 
         if mute_role:
             if mute_role >= guild.me.top_role:
-                return False, "The mute role is above my highest role. Please move it below my role."
+                return False, "The mute role is above my highest role. Move it below my role in the hierarchy."
             try:
                 await member.add_roles(mute_role, reason=reason)
             except discord.Forbidden:
                 return False, "I don't have permission to assign the mute role."
-            label = format_duration(td) if td else "permanent"
+
+            label = format_duration(td) if td else None
+
             if td:
-                asyncio.create_task(self._auto_unmute(member, mute_role, td.total_seconds()))
-            self.bot.dispatch("mod_action", "mute", actor, member, reason, guild, label if td else None)
-            msg = f"Muted **{member}**" + (f" for {label}" if td else "") + "."
+                expires_at = int(time.time() + td.total_seconds())
+                with db.get_db() as conn:
+                    mute_id = conn.execute(
+                        "INSERT INTO timed_mutes (guild_id, user_id, role_id, expires_at) VALUES (?, ?, ?, ?)",
+                        (guild.id, member.id, mute_role.id, expires_at)
+                    ).lastrowid
+                asyncio.create_task(_auto_unmute(mute_id, member, mute_role, td.total_seconds()))
+
+            self.bot.dispatch("mod_action", "mute", actor, member, reason, guild, label)
+            msg = f"Muted **{member}**" + (f" for {label}" if label else " permanently") + "."
             return True, msg + (f" Reason: {reason}" if reason else "")
 
-        # fallback: Discord timeout (requires duration)
         if not td:
-            return False, "No mute role configured. Run `?muterole create`, or provide a duration for a temporary timeout."
+            return False, "No mute role configured. Run `?muterole create`, or provide a duration to use a temporary Discord timeout."
         if td > timedelta(days=28):
             return False, "Discord timeouts can't exceed 28 days."
         try:
@@ -99,6 +101,8 @@ class Moderation(commands.Cog):
                 actions.append("role removed")
             except discord.Forbidden:
                 return False, "I don't have permission to remove the mute role."
+            with db.get_db() as conn:
+                conn.execute("DELETE FROM timed_mutes WHERE guild_id = ? AND user_id = ?", (guild.id, member.id))
         if member.timed_out_until:
             try:
                 await member.timeout(None)
@@ -122,6 +126,8 @@ class Moderation(commands.Cog):
         return True, f"Softbanned **{member}** (7 days of messages deleted)." + (f" Reason: {reason}" if reason else "")
 
     def _warn(self, actor, member, reason, guild):
+        if reason and len(reason) > 1000:
+            reason = reason[:1000]
         with db.get_db() as conn:
             conn.execute(
                 "INSERT INTO warnings (guild_id, user_id, reason, moderator_id) VALUES (?, ?, ?, ?)",
@@ -140,66 +146,64 @@ class Moderation(commands.Cog):
         if not rows:
             return None, f"**{member}** has no warnings."
         lines = [
-            f"`#{row['id']}` {row['reason']} — <@{row['moderator_id']}> on {row['created_at'][:10]}"
-            for row in rows
+            f"`#{r['id']}` {r['reason']} — <@{r['moderator_id']}> on {r['created_at'][:10]}"
+            for r in rows
         ]
         embed = discord.Embed(title=f"Warnings for {member}", description="\n".join(lines), color=discord.Color.orange())
         return embed, None
 
-    # slash commands
-
     @app_commands.command(name="kick", description="Kick a member from the server")
     @app_commands.describe(member="Who to kick", reason="Reason")
-    @app_commands.default_permissions(kick_members=True)
+    @app_commands.check(slash_mod_check)
     async def slash_kick(self, interaction: discord.Interaction, member: discord.Member, reason: str = None):
         ok, msg = await self._kick(interaction.user, member, reason, interaction.guild)
         await interaction.response.send_message(msg, ephemeral=not ok)
 
     @app_commands.command(name="ban", description="Ban a member from the server")
     @app_commands.describe(member="Who to ban", reason="Reason", delete_days="Days of messages to delete (0-7)")
-    @app_commands.default_permissions(ban_members=True)
+    @app_commands.check(slash_mod_check)
     async def slash_ban(self, interaction: discord.Interaction, member: discord.Member, reason: str = None, delete_days: int = 0):
         ok, msg = await self._ban(interaction.user, member, reason, interaction.guild, delete_days)
         await interaction.response.send_message(msg, ephemeral=not ok)
 
     @app_commands.command(name="unban", description="Unban a user by their ID")
     @app_commands.describe(user_id="User ID to unban", reason="Reason")
-    @app_commands.default_permissions(ban_members=True)
+    @app_commands.check(slash_mod_check)
     async def slash_unban(self, interaction: discord.Interaction, user_id: str, reason: str = None):
         ok, msg = await self._unban(interaction.user, interaction.guild, user_id, reason)
         await interaction.response.send_message(msg, ephemeral=not ok)
 
-    @app_commands.command(name="mute", description="Mute a member (uses mute role if configured, otherwise timeout)")
-    @app_commands.describe(member="Who to mute", duration="Duration (e.g. 10m, 2h, 1d). Leave empty for permanent if mute role is set.", reason="Reason")
-    @app_commands.default_permissions(moderate_members=True)
+    @app_commands.command(name="mute", description="Mute a member (mute role if configured, otherwise Discord timeout)")
+    @app_commands.describe(member="Who to mute", duration="Duration (e.g. 10m, 2h, 1d). Leave empty for permanent.", reason="Reason")
+    @app_commands.check(slash_mod_check)
     async def slash_mute(self, interaction: discord.Interaction, member: discord.Member, duration: str = None, reason: str = None):
         ok, msg = await self._mute(interaction.user, member, duration, reason, interaction.guild)
         await interaction.response.send_message(msg, ephemeral=not ok)
 
     @app_commands.command(name="unmute", description="Unmute a member")
     @app_commands.describe(member="Who to unmute")
-    @app_commands.default_permissions(moderate_members=True)
+    @app_commands.check(slash_mod_check)
     async def slash_unmute(self, interaction: discord.Interaction, member: discord.Member):
         ok, msg = await self._unmute(interaction.user, member, interaction.guild)
         await interaction.response.send_message(msg, ephemeral=not ok)
 
     @app_commands.command(name="softban", description="Ban + immediately unban (deletes 7 days of messages)")
     @app_commands.describe(member="Who to softban", reason="Reason")
-    @app_commands.default_permissions(ban_members=True)
+    @app_commands.check(slash_mod_check)
     async def slash_softban(self, interaction: discord.Interaction, member: discord.Member, reason: str = None):
         ok, msg = await self._softban(interaction.user, member, reason, interaction.guild)
         await interaction.response.send_message(msg, ephemeral=not ok)
 
     @app_commands.command(name="warn", description="Issue a warning to a member")
     @app_commands.describe(member="Who to warn", reason="Reason")
-    @app_commands.default_permissions(kick_members=True)
+    @app_commands.check(slash_mod_check)
     async def slash_warn(self, interaction: discord.Interaction, member: discord.Member, reason: str):
         msg = self._warn(interaction.user, member, reason, interaction.guild)
         await interaction.response.send_message(msg)
 
     @app_commands.command(name="warndel", description="Delete a warning by ID")
     @app_commands.describe(warning_id="Warning ID (shown in /warnings)")
-    @app_commands.default_permissions(kick_members=True)
+    @app_commands.check(slash_mod_check)
     async def slash_warndel(self, interaction: discord.Interaction, warning_id: int):
         with db.get_db() as conn:
             row = conn.execute("SELECT id FROM warnings WHERE id = ? AND guild_id = ?", (warning_id, interaction.guild.id)).fetchone()
@@ -211,7 +215,7 @@ class Moderation(commands.Cog):
 
     @app_commands.command(name="warnings", description="View warnings for a member")
     @app_commands.describe(member="Who to check")
-    @app_commands.default_permissions(kick_members=True)
+    @app_commands.check(slash_mod_check)
     async def slash_warnings(self, interaction: discord.Interaction, member: discord.Member):
         embed, plain = self._get_warnings_embed(member, interaction.guild.id)
         if embed:
@@ -221,13 +225,11 @@ class Moderation(commands.Cog):
 
     @app_commands.command(name="clearwarnings", description="Clear all warnings for a member")
     @app_commands.describe(member="Who to clear warnings for")
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(slash_admin_check)
     async def slash_clearwarnings(self, interaction: discord.Interaction, member: discord.Member):
         with db.get_db() as conn:
             conn.execute("DELETE FROM warnings WHERE guild_id = ? AND user_id = ?", (interaction.guild.id, member.id))
         await interaction.response.send_message(f"Cleared all warnings for **{member}**.")
-
-    # prefix commands
 
     @commands.command(name="kick")
     @moderator_check()
@@ -279,7 +281,11 @@ class Moderation(commands.Cog):
     @commands.command(name="warndel")
     @moderator_check()
     async def prefix_warndel(self, ctx, warning_id: str):
-        parsed = int(warning_id.replace("#", ""))
+        try:
+            parsed = int(warning_id.replace("#", ""))
+        except ValueError:
+            await ctx.send("❌ Invalid warning ID.")
+            return
         with db.get_db() as conn:
             row = conn.execute("SELECT id FROM warnings WHERE id = ? AND guild_id = ?", (parsed, ctx.guild.id)).fetchone()
             if not row:
