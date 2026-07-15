@@ -70,6 +70,10 @@ class Moderation(commands.Cog):
             if td:
                 expires_at = int(time.time() + td.total_seconds())
                 with db.get_db() as conn:
+                    conn.execute(
+                        "DELETE FROM timed_mutes WHERE guild_id = ? AND user_id = ?",
+                        (guild.id, member.id)
+                    )
                     mute_id = conn.execute(
                         "INSERT INTO timed_mutes (guild_id, user_id, role_id, expires_at) VALUES (?, ?, ?, ?)",
                         (guild.id, member.id, mute_role.id, expires_at)

@@ -83,9 +83,12 @@ async def auto_unmute(mute_id: int, member, role, delay: float):
     import asyncio
     import db
     await asyncio.sleep(delay)
+    with db.get_db() as conn:
+        row = conn.execute("SELECT id FROM timed_mutes WHERE id = ?", (mute_id,)).fetchone()
+        if not row:
+            return
+        conn.execute("DELETE FROM timed_mutes WHERE id = ?", (mute_id,))
     try:
         await member.remove_roles(role, reason="Mute expired")
     except Exception:
         pass
-    with db.get_db() as conn:
-        conn.execute("DELETE FROM timed_mutes WHERE id = ?", (mute_id,))

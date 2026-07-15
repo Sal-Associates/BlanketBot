@@ -150,7 +150,7 @@ _SM_DECODE = {-1: None, 1: True, 0: False}
 def save_permission_snapshot(guild_id: int, channel_id: int, snapshot_type: str, send_messages):
     with get_db() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO permission_snapshots (guild_id, channel_id, snapshot_type, send_messages) VALUES (?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO permission_snapshots (guild_id, channel_id, snapshot_type, send_messages) VALUES (?, ?, ?, ?)",
             (guild_id, channel_id, snapshot_type, _SM_ENCODE.get(send_messages, -1))
         )
 
