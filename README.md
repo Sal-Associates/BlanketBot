@@ -16,6 +16,14 @@ pip install -r requirements.txt
 ```
 
 ---
+## Setup (Docker)
+
+1. Create a bot at [discord.com/developers/applications](https://discord.com/developers/applications)
+2. Under **Bot**, enable: **Server Members Intent**, **Message Content Intent**
+3. Under **OAuth2 → URL Generator**, select scopes: `bot`, `applications.commands`
+4. Select permissions: Manage Roles, Manage Channels, Kick Members, Ban Members, Moderate Members, Manage Messages, Read Message History, View Audit Log
+5. Copy `.env.example` to `.env` and fill in your token
+6. Run: `docker compose up -d`
 
 ## Setup
 
