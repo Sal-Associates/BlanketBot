@@ -109,6 +109,7 @@ def init_db():
         for sql in [
             "ALTER TABLE mod_actions ADD COLUMN case_number INTEGER",
             "ALTER TABLE guild_settings ADD COLUMN mute_role_id INTEGER",
+            "ALTER TABLE mod_actions ADD COLUMN moderator_display TEXT",
         ]:
             try:
                 conn.execute(sql)

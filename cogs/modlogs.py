@@ -32,6 +32,12 @@ class ModlogsPaginator(discord.ui.View):
         await interaction.response.edit_message(embed=self.pages[self.current], view=self)
 
 
+def _mod_str(row) -> str:
+    if row["moderator_id"]:
+        return f"<@{row['moderator_id']}>"
+    return row["moderator_display"] or "Unknown"
+
+
 def build_modlogs_pages(member: discord.Member, rows) -> list[discord.Embed] | str:
     if not rows:
         return f"No recorded mod actions for **{member}**."
@@ -44,16 +50,16 @@ def build_modlogs_pages(member: discord.Member, rows) -> list[discord.Embed] | s
                 dt = datetime.fromisoformat(row["created_at"])
                 date_str = dt.strftime("%b %d %Y %H:%M:%S")
             except (ValueError, TypeError):
-                date_str = row["created_at"]
-            case_label = f"Case {row['case_number']}" if row["case_number"] else "Case —"
+                date_str = str(row["created_at"])
+            case_label = f"Case {row['case_number']}" if row["case_number"] else "Case -"
             reason = row["reason"] or "No reason provided"
-            duration_str = f" · {row['duration']}" if row["duration"] else ""
+            duration_str = f" \u00b7 {row['duration']}" if row["duration"] else ""
             lines.append(
                 f"**{case_label}**\n"
                 f"Type: {row['action'].capitalize()}\n"
                 f"User: {member} ({member.id})\n"
-                f"Moderator: <@{row['moderator_id']}>\n"
-                f"Reason: {reason}{duration_str} — {date_str}"
+                f"Moderator: {_mod_str(row)}\n"
+                f"Reason: {reason}{duration_str} \u2014 {date_str}"
             )
         embed = discord.Embed(
             title=f"Modlogs for {member} (Page {page_num} of {len(chunks)})",
@@ -76,15 +82,15 @@ def build_modstats_embed(target, rows) -> discord.Embed | str:
         embed.set_author(name=target_name)
     for action_key, label in [("mute", "Mutes"), ("ban", "Bans"), ("kick", "Kicks"), ("warn", "Warns")]:
         s = data.get(action_key, {"d7": 0, "d30": 0, "total": 0})
-        embed.add_field(name=f"{label} (last 7 days):",  value=str(s["d7"]),    inline=True)
-        embed.add_field(name=f"{label} (last 30 days):", value=str(s["d30"]),   inline=True)
-        embed.add_field(name=f"{label} (all time):",     value=str(s["total"]), inline=True)
+        embed.add_field(name=f"{label} (7d)",  value=str(s["d7"]),    inline=True)
+        embed.add_field(name=f"{label} (30d)", value=str(s["d30"]),   inline=True)
+        embed.add_field(name=f"{label} (all)", value=str(s["total"]), inline=True)
     total_d7  = sum(d["d7"]    for d in data.values())
     total_d30 = sum(d["d30"]   for d in data.values())
     total_all = sum(d["total"] for d in data.values())
-    embed.add_field(name="Total (last 7 days):",  value=str(total_d7),  inline=True)
-    embed.add_field(name="Total (last 30 days):", value=str(total_d30), inline=True)
-    embed.add_field(name="Total (all time):",     value=str(total_all), inline=True)
+    embed.add_field(name="Total (7d)",  value=str(total_d7),  inline=True)
+    embed.add_field(name="Total (30d)", value=str(total_d30), inline=True)
+    embed.add_field(name="Total (all)", value=str(total_all), inline=True)
     if hasattr(target, "id"):
         embed.set_footer(text=f"ID: {target.id}")
     return embed
@@ -97,7 +103,7 @@ class ModLogs(commands.Cog):
     def _fetch_modlogs(self, guild_id, user_id):
         with db.get_db() as conn:
             return conn.execute(
-                "SELECT case_number, action, moderator_id, reason, duration, created_at "
+                "SELECT case_number, action, moderator_id, moderator_display, reason, duration, created_at "
                 "FROM mod_actions WHERE guild_id = ? AND target_id = ? ORDER BY created_at DESC",
                 (guild_id, user_id)
             ).fetchall()
@@ -125,22 +131,22 @@ class ModLogs(commands.Cog):
     def _fetch_case(self, guild_id, case_number):
         with db.get_db() as conn:
             return conn.execute(
-                "SELECT case_number, action, target_id, moderator_id, reason, duration, created_at "
+                "SELECT case_number, action, target_id, moderator_id, moderator_display, reason, duration, created_at "
                 "FROM mod_actions WHERE guild_id = ? AND case_number = ?",
                 (guild_id, case_number)
             ).fetchone()
 
     def _build_case_embed(self, row) -> discord.Embed:
         embed = discord.Embed(
-            title=f"Case #{row['case_number']} — {row['action'].capitalize()}",
+            title=f"Case #{row['case_number']} \u2014 {row['action'].capitalize()}",
             color=discord.Color.blurple()
         )
         embed.add_field(name="User",      value=f"<@{row['target_id']}> ({row['target_id']})", inline=True)
-        embed.add_field(name="Moderator", value=f"<@{row['moderator_id']}>",                   inline=True)
+        embed.add_field(name="Moderator", value=_mod_str(row),                                  inline=True)
         if row["duration"]:
             embed.add_field(name="Duration", value=row["duration"], inline=True)
         embed.add_field(name="Reason", value=row["reason"] or "No reason provided", inline=False)
-        embed.add_field(name="Date",   value=row["created_at"][:10],                inline=True)
+        embed.add_field(name="Date",   value=str(row["created_at"])[:10],            inline=True)
         return embed
 
     @app_commands.command(name="modlogs", description="View mod history for a user")
@@ -209,7 +215,7 @@ class ModLogs(commands.Cog):
         if isinstance(error, commands.MemberNotFound):
             await ctx.send("Member not found.")
         elif isinstance(error, commands.BadArgument):
-            await ctx.send(f"❌ {error}")
+            await ctx.send(f"Bad argument: {error}")
 
 
 async def setup(bot):
