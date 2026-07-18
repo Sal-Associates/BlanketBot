@@ -2,7 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import db
-from checks import moderator_check, slash_mod_check
+from checks import moderator_check, administrator_check, slash_mod_check
 
 
 class Channel(commands.Cog):
@@ -10,32 +10,27 @@ class Channel(commands.Cog):
         self.bot = bot
 
     async def _lock(self, channel, actor, guild):
-        if not isinstance(channel, discord.TextChannel):
-            return False, "Can only lock text channels."
+        if not isinstance(channel, discord.TextChannel | discord.Thread):
+            return False, "Can only lock text channels or threads."
         everyone = guild.default_role
-        previous = channel.overwrites_for(everyone).send_messages
+        overwrite = channel.overwrites_for(everyone)
+        db.save_permission_snapshot(guild.id, channel.id, "lock", overwrite.send_messages)
         try:
             await channel.set_permissions(everyone, send_messages=False)
         except discord.Forbidden:
             return False, "I don't have permission to lock that channel."
-        db.save_permission_snapshot(guild.id, channel.id, "lock", previous)
         self.bot.dispatch("mod_action", "lock", actor, channel, None, guild)
         return True, f"🔒 Locked {channel.mention}."
 
     async def _unlock(self, channel, actor, guild):
-        if not isinstance(channel, discord.TextChannel):
-            return False, "Can only unlock text channels."
+        if not isinstance(channel, discord.TextChannel | discord.Thread):
+            return False, "Can only unlock text channels or threads."
         everyone = guild.default_role
-        restore, found = db.get_permission_snapshot(guild.id, channel.id, "lock")
-        if not found:
-            # No bot snapshot — clear send_messages deny if present
-            restore = None
+        restore = db.pop_permission_snapshot(guild.id, channel.id, "lock")
         try:
             await channel.set_permissions(everyone, send_messages=restore)
         except discord.Forbidden:
             return False, "I don't have permission to unlock that channel."
-        if found:
-            db.delete_permission_snapshot(guild.id, channel.id, "lock")
         self.bot.dispatch("mod_action", "unlock", actor, channel, None, guild)
         return True, f"🔓 Unlocked {channel.mention}."
 
@@ -63,9 +58,6 @@ class Channel(commands.Cog):
             await interaction.response.send_message("Seconds must be between 0 and 21600.", ephemeral=True)
             return
         target = channel or interaction.channel
-        if not isinstance(target, discord.TextChannel):
-            await interaction.response.send_message("Can only set slowmode on text channels.", ephemeral=True)
-            return
         await target.edit(slowmode_delay=seconds)
         msg = f"Slowmode disabled in {target.mention}." if seconds == 0 else f"Slowmode set to **{seconds}s** in {target.mention}."
         await interaction.response.send_message(msg)
@@ -94,9 +86,6 @@ class Channel(commands.Cog):
             await ctx.send("Seconds must be between 0 and 21600.")
             return
         target = channel or ctx.channel
-        if not isinstance(target, discord.TextChannel):
-            await ctx.send("Can only set slowmode on text channels.")
-            return
         await target.edit(slowmode_delay=seconds)
         msg = f"Slowmode disabled in {target.mention}." if seconds == 0 else f"Slowmode set to **{seconds}s** in {target.mention}."
         await ctx.send(msg)

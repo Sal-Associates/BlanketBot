@@ -33,10 +33,7 @@ class Moderation(commands.Cog):
         if not role_check(actor, member):
             return False, "You can't ban someone with a higher or equal role."
         try:
-            await member.ban(
-                reason=reason,
-                delete_message_seconds=min(max(delete_days, 0), 7) * 86400,
-            )
+            await member.ban(reason=reason, delete_message_days=min(delete_days, 7))
         except discord.Forbidden:
             return False, "I don't have permission to ban that member."
         self.bot.dispatch("mod_action", "ban", actor, member, reason, guild)
@@ -57,8 +54,6 @@ class Moderation(commands.Cog):
         return True, f"Unbanned **{user}**."
 
     async def _mute(self, actor, member, duration_str, reason, guild):
-        if not role_check(actor, member):
-            return False, "You can't mute someone with a higher or equal role."
         mute_role = self._get_mute_role(guild)
         td = parse_duration(duration_str) if duration_str else None
 
@@ -127,7 +122,7 @@ class Moderation(commands.Cog):
         if not role_check(actor, member):
             return False, "You can't softban someone with a higher or equal role."
         try:
-            await member.ban(reason=f"Softban: {reason}", delete_message_seconds=604800)
+            await member.ban(reason=f"Softban: {reason}", delete_message_days=7)
             await guild.unban(member, reason="Softban complete")
         except discord.Forbidden:
             return False, "I don't have permission to softban that member."
@@ -135,8 +130,6 @@ class Moderation(commands.Cog):
         return True, f"Softbanned **{member}** (7 days of messages deleted)." + (f" Reason: {reason}" if reason else "")
 
     def _warn(self, actor, member, reason, guild):
-        if not role_check(actor, member):
-            return False, "You can't warn someone with a higher or equal role."
         if reason and len(reason) > 1000:
             reason = reason[:1000]
         with db.get_db() as conn:
@@ -145,7 +138,7 @@ class Moderation(commands.Cog):
                 (guild.id, member.id, reason, actor.id)
             )
         self.bot.dispatch("mod_action", "warn", actor, member, reason, guild)
-        return True, f"Warned **{member}**: {reason}"
+        return f"Warned **{member}**: {reason}"
 
     def _get_warnings_embed(self, member, guild_id):
         with db.get_db() as conn:
@@ -209,8 +202,8 @@ class Moderation(commands.Cog):
     @app_commands.describe(member="Who to warn", reason="Reason")
     @app_commands.check(slash_mod_check)
     async def slash_warn(self, interaction: discord.Interaction, member: discord.Member, reason: str):
-        ok, msg = self._warn(interaction.user, member, reason, interaction.guild)
-        await interaction.response.send_message(msg, ephemeral=not ok)
+        msg = self._warn(interaction.user, member, reason, interaction.guild)
+        await interaction.response.send_message(msg)
 
     @app_commands.command(name="warndel", description="Delete a warning by ID")
     @app_commands.describe(warning_id="Warning ID (shown in /warnings)")
@@ -286,7 +279,7 @@ class Moderation(commands.Cog):
     @commands.command(name="warn")
     @moderator_check()
     async def prefix_warn(self, ctx, member: discord.Member, *, reason: str):
-        _, msg = self._warn(ctx.author, member, reason, ctx.guild)
+        msg = self._warn(ctx.author, member, reason, ctx.guild)
         await ctx.send(msg)
 
     @commands.command(name="warndel")

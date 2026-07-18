@@ -9,21 +9,7 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from utils import parse_duration, format_duration, parse_user_id
-
-
-class TestParseUserId:
-    def test_raw_id(self):
-        assert parse_user_id("123456789012345678") == 123456789012345678
-
-    def test_mention(self):
-        assert parse_user_id("<@123456789012345678>") == 123456789012345678
-        assert parse_user_id("<@!123456789012345678>") == 123456789012345678
-
-    def test_invalid(self):
-        assert parse_user_id("not-an-id") is None
-        assert parse_user_id("") is None
-        assert parse_user_id(None) is None
+from utils import parse_duration, format_duration
 
 
 class TestParseDuration:
@@ -127,9 +113,6 @@ class TestDatabase:
 
     def test_permission_snapshot_roundtrip(self, test_db):
         test_db.save_permission_snapshot(1, 100, "lock", None)
-        value, found = test_db.get_permission_snapshot(1, 100, "lock")
-        assert found is True
-        assert value is None
         assert test_db.pop_permission_snapshot(1, 100, "lock") is None
 
         test_db.save_permission_snapshot(1, 100, "lock", True)
@@ -137,17 +120,6 @@ class TestDatabase:
 
         test_db.save_permission_snapshot(1, 100, "lock", False)
         assert test_db.pop_permission_snapshot(1, 100, "lock") is False
-
-    def test_snapshot_not_lost_on_get(self, test_db):
-        test_db.save_permission_snapshot(1, 100, "lock", True)
-        value, found = test_db.get_permission_snapshot(1, 100, "lock")
-        assert found and value is True
-        # Still present until explicitly deleted
-        value2, found2 = test_db.get_permission_snapshot(1, 100, "lock")
-        assert found2 and value2 is True
-        test_db.delete_permission_snapshot(1, 100, "lock")
-        _, found3 = test_db.get_permission_snapshot(1, 100, "lock")
-        assert found3 is False
 
     def test_pop_snapshot_removes_entry(self, test_db):
         test_db.save_permission_snapshot(1, 100, "lock", True)

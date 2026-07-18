@@ -4,7 +4,6 @@ from discord import app_commands
 from discord.ext import commands
 import db
 from checks import moderator_check, slash_mod_check
-from utils import parse_user_id, resolve_member
 
 CASES_PER_PAGE = 5
 
@@ -39,9 +38,9 @@ def _mod_str(row) -> str:
     return row["moderator_display"] or "Unknown"
 
 
-def build_modlogs_pages(label: str, user_id: int, rows) -> list[discord.Embed] | str:
+def build_modlogs_pages(member: discord.Member, rows) -> list[discord.Embed] | str:
     if not rows:
-        return f"No recorded mod actions for **{label}** (`{user_id}`)."
+        return f"No recorded mod actions for **{member}**."
     chunks = [rows[i:i + CASES_PER_PAGE] for i in range(0, len(rows), CASES_PER_PAGE)]
     pages = []
     for page_num, chunk in enumerate(chunks, 1):
@@ -58,16 +57,15 @@ def build_modlogs_pages(label: str, user_id: int, rows) -> list[discord.Embed] |
             lines.append(
                 f"**{case_label}**\n"
                 f"Type: {row['action'].capitalize()}\n"
-                f"User: {label} ({user_id})\n"
+                f"User: {member} ({member.id})\n"
                 f"Moderator: {_mod_str(row)}\n"
                 f"Reason: {reason}{duration_str} \u2014 {date_str}"
             )
         embed = discord.Embed(
-            title=f"Modlogs for {label} (Page {page_num} of {len(chunks)})",
+            title=f"Modlogs for {member} (Page {page_num} of {len(chunks)})",
             description="\n\n".join(lines),
             color=discord.Color.blurple()
         )
-        embed.set_footer(text=f"User ID: {user_id}")
         pages.append(embed)
     return pages
 
@@ -151,41 +149,12 @@ class ModLogs(commands.Cog):
         embed.add_field(name="Date",   value=str(row["created_at"])[:10],            inline=True)
         return embed
 
-    async def _resolve_target(self, guild: discord.Guild, value: str):
-        """Resolve a mention, member name, or raw Discord user ID (works for users who left)."""
-        member = resolve_member(guild, value)
-        if member:
-            return member.id, str(member)
-
-        user_id = parse_user_id(value)
-        if user_id is None:
-            return None, None
-
-        member = guild.get_member(user_id)
-        if member:
-            return member.id, str(member)
-
-        try:
-            user = await self.bot.fetch_user(user_id)
-            return user.id, str(user)
-        except discord.NotFound:
-            # Still allow lookup for imported cases even if the account is gone
-            return user_id, f"Unknown User ({user_id})"
-        except discord.HTTPException:
-            return user_id, f"User {user_id}"
-
-    @app_commands.command(name="modlogs", description="View mod history for a user (supports user ID)")
-    @app_commands.describe(user="Member mention or Discord user ID")
+    @app_commands.command(name="modlogs", description="View mod history for a user")
+    @app_commands.describe(member="Member to look up")
     @app_commands.check(slash_mod_check)
-    async def slash_modlogs(self, interaction: discord.Interaction, user: str):
-        user_id, label = await self._resolve_target(interaction.guild, user)
-        if user_id is None:
-            await interaction.response.send_message(
-                "❌ Provide a member mention or Discord user ID.", ephemeral=True
-            )
-            return
-        rows = self._fetch_modlogs(interaction.guild.id, user_id)
-        result = build_modlogs_pages(label, user_id, rows)
+    async def slash_modlogs(self, interaction: discord.Interaction, member: discord.Member):
+        rows = self._fetch_modlogs(interaction.guild.id, member.id)
+        result = build_modlogs_pages(member, rows)
         if isinstance(result, str):
             await interaction.response.send_message(result, ephemeral=True)
             return
@@ -216,16 +185,9 @@ class ModLogs(commands.Cog):
 
     @commands.command(name="modlogs")
     @moderator_check()
-    async def prefix_modlogs(self, ctx, *, user: str):
-        """View mod history. Accepts @mention, username, or Discord user ID.
-        Example: ?modlogs 123456789012345678
-        """
-        user_id, label = await self._resolve_target(ctx.guild, user)
-        if user_id is None:
-            await ctx.send("❌ Provide a member mention, username, or Discord user ID.")
-            return
-        rows = self._fetch_modlogs(ctx.guild.id, user_id)
-        result = build_modlogs_pages(label, user_id, rows)
+    async def prefix_modlogs(self, ctx, member: discord.Member):
+        rows = self._fetch_modlogs(ctx.guild.id, member.id)
+        result = build_modlogs_pages(member, rows)
         if isinstance(result, str):
             await ctx.send(result)
             return
@@ -251,9 +213,7 @@ class ModLogs(commands.Cog):
 
     async def cog_command_error(self, ctx, error):
         if isinstance(error, commands.MemberNotFound):
-            await ctx.send("Member not found. Try using their Discord user ID instead.")
-        elif isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send("❌ Usage: `?modlogs <@user|user_id>`")
+            await ctx.send("Member not found.")
         elif isinstance(error, commands.BadArgument):
             await ctx.send(f"Bad argument: {error}")
 

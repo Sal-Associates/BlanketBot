@@ -33,10 +33,10 @@ class Lockdown(commands.Cog):
             channel = ctx.guild.get_channel(row["channel_id"])
             if not channel:
                 continue
-            previous = channel.overwrites_for(everyone).send_messages
+            overwrite = channel.overwrites_for(everyone)
+            db.save_permission_snapshot(ctx.guild.id, channel.id, "lockdown", overwrite.send_messages)
             try:
                 await channel.set_permissions(everyone, send_messages=False, reason=f"Lockdown: {reason or 'No reason'}")
-                db.save_permission_snapshot(ctx.guild.id, channel.id, "lockdown", previous)
                 locked.append(channel.mention)
             except discord.HTTPException:
                 failed.append(channel.mention)
@@ -64,13 +64,9 @@ class Lockdown(commands.Cog):
             channel = ctx.guild.get_channel(row["channel_id"])
             if not channel:
                 continue
-            restore, found = db.get_permission_snapshot(ctx.guild.id, channel.id, "lockdown")
-            if not found:
-                restore = None
+            restore = db.pop_permission_snapshot(ctx.guild.id, channel.id, "lockdown")
             try:
                 await channel.set_permissions(everyone, send_messages=restore, reason=f"Lockdown lifted: {reason or 'No reason'}")
-                if found:
-                    db.delete_permission_snapshot(ctx.guild.id, channel.id, "lockdown")
                 unlocked.append(channel.mention)
             except discord.HTTPException:
                 failed.append(channel.mention)

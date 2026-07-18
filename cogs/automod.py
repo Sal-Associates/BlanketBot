@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands
 import db
 from checks import _is_mod, administrator_check
-from utils import INVITE_RE, LINK_RE, mark_automod_delete
+from utils import INVITE_RE, LINK_RE
 
 THRESHOLD_RANGES = {
     "caps_threshold":    (50, 100),
@@ -77,15 +77,12 @@ class Automod(commands.Cog):
             whitelist = [r["link"] for r in conn.execute(
                 "SELECT link FROM automod_links WHERE guild_id = ? AND list_type = 'whitelist'", (guild_id,)
             ).fetchall()]
-        # Empty blacklist = do not block links (whitelist alone never blocks).
-        if not blacklist:
-            return None
         for link in links:
             lower = link.lower()
             if any(w in lower for w in whitelist):
                 continue
-            if any(b in lower for b in blacklist):
-                return "blocked link"
+            if not blacklist or any(b in lower for b in blacklist):
+                return f"blocked link"
         return None
 
     def _check_spam(self, guild_id: int, user_id: int, count: int, window: int) -> bool:
@@ -149,7 +146,6 @@ class Automod(commands.Cog):
 
         if reason:
             try:
-                mark_automod_delete(message.id)
                 await message.delete()
             except discord.HTTPException:
                 pass
@@ -356,7 +352,7 @@ class Automod(commands.Cog):
                 (ctx.guild.id,)
             ).fetchall()
         if not rows:
-            await ctx.send("No blacklisted links. An empty blacklist does not block links.")
+            await ctx.send("No blacklisted links. With an empty blacklist, all links not in the whitelist are blocked.")
             return
         await ctx.send("Blacklisted links:\n" + "\n".join(f"`{r['link']}`" for r in rows))
 

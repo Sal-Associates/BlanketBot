@@ -151,33 +151,21 @@ _SM_DECODE = {-1: None, 1: True, 0: False}
 def save_permission_snapshot(guild_id: int, channel_id: int, snapshot_type: str, send_messages):
     with get_db() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO permission_snapshots (guild_id, channel_id, snapshot_type, send_messages) VALUES (?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO permission_snapshots (guild_id, channel_id, snapshot_type, send_messages) VALUES (?, ?, ?, ?)",
             (guild_id, channel_id, snapshot_type, _SM_ENCODE.get(send_messages, -1))
         )
 
-def get_permission_snapshot(guild_id: int, channel_id: int, snapshot_type: str):
-    """Return saved send_messages without deleting the snapshot."""
+def pop_permission_snapshot(guild_id: int, channel_id: int, snapshot_type: str):
+    """Returns the saved send_messages value and removes the snapshot."""
     with get_db() as conn:
         row = conn.execute(
             "SELECT send_messages FROM permission_snapshots WHERE guild_id = ? AND channel_id = ? AND snapshot_type = ?",
             (guild_id, channel_id, snapshot_type)
         ).fetchone()
-    if row is None:
-        return None, False
-    return _SM_DECODE.get(row["send_messages"], None), True
-
-def delete_permission_snapshot(guild_id: int, channel_id: int, snapshot_type: str):
-    with get_db() as conn:
         conn.execute(
             "DELETE FROM permission_snapshots WHERE guild_id = ? AND channel_id = ? AND snapshot_type = ?",
             (guild_id, channel_id, snapshot_type)
         )
-
-def pop_permission_snapshot(guild_id: int, channel_id: int, snapshot_type: str):
-    """Returns the saved send_messages value and removes the snapshot."""
-    value, found = get_permission_snapshot(guild_id, channel_id, snapshot_type)
-    if found:
-        delete_permission_snapshot(guild_id, channel_id, snapshot_type)
-    if not found:
+    if row is None:
         return None
-    return value
+    return _SM_DECODE.get(row["send_messages"], None)
