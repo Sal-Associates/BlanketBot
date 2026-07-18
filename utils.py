@@ -72,10 +72,46 @@ def resolve_member(guild: discord.Guild, value: str | None) -> discord.Member | 
     return None
 
 
+def parse_user_id(value: str | None) -> int | None:
+    """Extract a Discord snowflake from a mention or raw ID string."""
+    if not value:
+        return None
+    value = value.strip()
+    mention = MENTION_RE.match(value)
+    if mention:
+        return int(mention.group(1))
+    if SNOWFLAKE_RE.match(value):
+        return int(value)
+    return None
+
+
 def role_check(actor: discord.Member, member: discord.Member) -> bool:
+    if actor.id == member.id:
+        return False
+    if member.id == actor.guild.owner_id:
+        return False
     if actor.guild_permissions.administrator:
         return True
     return actor.top_role > member.top_role
+
+
+# Automod-deleted message IDs — mod_log skips these to avoid spam
+_automod_deleted_ids: set[int] = set()
+
+
+def mark_automod_delete(message_id: int) -> None:
+    _automod_deleted_ids.add(message_id)
+    if len(_automod_deleted_ids) > 500:
+        # Drop oldest-ish entries cheaply by clearing half
+        for _ in range(250):
+            _automod_deleted_ids.pop()
+
+
+def consume_automod_delete(message_id: int) -> bool:
+    if message_id in _automod_deleted_ids:
+        _automod_deleted_ids.discard(message_id)
+        return True
+    return False
 
 
 async def auto_unmute(mute_id: int, member, role, delay: float):

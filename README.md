@@ -109,7 +109,7 @@ Default (no filter): deletes up to 100 recent messages.
 
 | Command | Description |
 |---|---|
-| `?modlogs @user` | View mod history for a user |
+| `?modlogs <@user\|user_id>` | View mod history for a user (works with Discord user ID for imported / left users) |
 | `?modstats [@mod]` | Mod action stats. Omit mod for server-wide stats. |
 | `?case <number>` | Look up a specific case by number |
 | `?whois [@user]` | User profile: roles, join date, warning count, recent cases |
