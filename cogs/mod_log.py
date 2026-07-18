@@ -2,6 +2,7 @@ import os
 import discord
 from discord.ext import commands
 import db
+from utils import consume_automod_delete
 
 _FALLBACK_LOG_CHANNEL = int(os.getenv("LOG_CHANNEL_ID", 0))
 
@@ -98,6 +99,8 @@ class ModLog(commands.Cog):
     @commands.Cog.listener()
     async def on_message_delete(self, message: discord.Message):
         if message.author.bot or not message.guild:
+            return
+        if consume_automod_delete(message.id):
             return
         embed = discord.Embed(
             title="Message deleted",
