@@ -6,7 +6,14 @@ MENTION_RE = re.compile(r"^<@!?(\d+)>$")
 SNOWFLAKE_RE = re.compile(r"^\d{17,20}$")
 LINK_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 INVITE_RE = re.compile(
-    r"(?:https?://)?(?:www\.)?(?:discord\.(?:gg|io|me|li)|discordapp\.com/invite)/\S+",
+    r"(?:https?://)?(?:www\.)?"
+    r"(?:"
+    r"discord\.(?:gg|io|me|li)"
+    r"|discordapp\.com/invite"
+    r"|discord\.com/invite"
+    r"|t\.me"
+    r"|telegram\.(?:me|dog)"
+    r")/\S+",
     re.IGNORECASE,
 )
 
