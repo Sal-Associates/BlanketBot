@@ -29,11 +29,11 @@ class Moderation(commands.Cog):
         self.bot.dispatch("mod_action", "kick", actor, member, reason, guild)
         return True, f"Kicked **{member}**." + (f" Reason: {reason}" if reason else "")
 
-    async def _ban(self, actor, member, reason, guild, delete_days=0):
+    async def _ban(self, actor, member, reason, guild):
         if not role_check(actor, member):
             return False, "You can't ban someone with a higher or equal role."
         try:
-            await member.ban(reason=reason, delete_message_days=min(delete_days, 7))
+            await member.ban(reason=reason, delete_message_seconds=43200)
         except discord.Forbidden:
             return False, "I don't have permission to ban that member."
         self.bot.dispatch("mod_action", "ban", actor, member, reason, guild)
@@ -164,10 +164,10 @@ class Moderation(commands.Cog):
         await interaction.response.send_message(msg, ephemeral=not ok)
 
     @app_commands.command(name="ban", description="Ban a member from the server")
-    @app_commands.describe(member="Who to ban", reason="Reason", delete_days="Days of messages to delete (0-7)")
+    @app_commands.describe(member="Who to ban", reason="Reason")
     @app_commands.check(slash_mod_check)
-    async def slash_ban(self, interaction: discord.Interaction, member: discord.Member, reason: str = None, delete_days: int = 0):
-        ok, msg = await self._ban(interaction.user, member, reason, interaction.guild, delete_days)
+    async def slash_ban(self, interaction: discord.Interaction, member: discord.Member, reason: str = None):
+        ok, msg = await self._ban(interaction.user, member, reason, interaction.guild)
         await interaction.response.send_message(msg, ephemeral=not ok)
 
     @app_commands.command(name="unban", description="Unban a user by their ID")
