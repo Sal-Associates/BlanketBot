@@ -150,11 +150,11 @@ class ModLogs(commands.Cog):
         return embed
 
     @app_commands.command(name="modlogs", description="View mod history for a user")
-    @app_commands.describe(member="Member to look up")
+    @app_commands.describe(user="Member or user to look up (works for users who have left)")
     @app_commands.check(slash_mod_check)
-    async def slash_modlogs(self, interaction: discord.Interaction, member: discord.Member):
-        rows = self._fetch_modlogs(interaction.guild.id, member.id)
-        result = build_modlogs_pages(member, rows)
+    async def slash_modlogs(self, interaction: discord.Interaction, user: discord.User):
+        rows = self._fetch_modlogs(interaction.guild.id, user.id)
+        result = build_modlogs_pages(user, rows)
         if isinstance(result, str):
             await interaction.response.send_message(result, ephemeral=True)
             return
@@ -185,9 +185,21 @@ class ModLogs(commands.Cog):
 
     @commands.command(name="modlogs")
     @moderator_check()
-    async def prefix_modlogs(self, ctx, member: discord.Member):
-        rows = self._fetch_modlogs(ctx.guild.id, member.id)
-        result = build_modlogs_pages(member, rows)
+    async def prefix_modlogs(self, ctx, *, target: str):
+        user = None
+        try:
+            user = await commands.MemberConverter().convert(ctx, target)
+        except commands.MemberNotFound:
+            pass
+        if user is None:
+            try:
+                user_id = int(target.strip().lstrip("<@!").rstrip(">"))
+                user = await self.bot.fetch_user(user_id)
+            except (ValueError, discord.NotFound):
+                await ctx.send("❌ User not found. Provide a mention, username, or user ID.")
+                return
+        rows = self._fetch_modlogs(ctx.guild.id, user.id)
+        result = build_modlogs_pages(user, rows)
         if isinstance(result, str):
             await ctx.send(result)
             return

@@ -29,15 +29,17 @@ class Moderation(commands.Cog):
         self.bot.dispatch("mod_action", "kick", actor, member, reason, guild)
         return True, f"Kicked **{member}**." + (f" Reason: {reason}" if reason else "")
 
-    async def _ban(self, actor, member, reason, guild):
-        if not role_check(actor, member):
+    async def _ban(self, actor, user, reason, guild):
+        if isinstance(user, discord.Member) and not role_check(actor, user):
             return False, "You can't ban someone with a higher or equal role."
         try:
-            await member.ban(reason=reason, delete_message_seconds=43200)
+            await guild.ban(user, reason=reason, delete_message_seconds=43200)
         except discord.Forbidden:
-            return False, "I don't have permission to ban that member."
-        self.bot.dispatch("mod_action", "ban", actor, member, reason, guild)
-        return True, f"Banned **{member}**." + (f" Reason: {reason}" if reason else "")
+            return False, "I don't have permission to ban that user."
+        except discord.HTTPException as e:
+            return False, f"Ban failed: {e}"
+        self.bot.dispatch("mod_action", "ban", actor, user, reason, guild)
+        return True, f"Banned **{user}**." + (f" Reason: {reason}" if reason else "")
 
     async def _unban(self, actor, guild, user_id_str, reason):
         try:
@@ -163,11 +165,11 @@ class Moderation(commands.Cog):
         ok, msg = await self._kick(interaction.user, member, reason, interaction.guild)
         await interaction.response.send_message(msg, ephemeral=not ok)
 
-    @app_commands.command(name="ban", description="Ban a member from the server")
-    @app_commands.describe(member="Who to ban", reason="Reason")
+    @app_commands.command(name="ban", description="Ban a user (works for users who have left the server)")
+    @app_commands.describe(user="Who to ban — accepts members or user IDs", reason="Reason")
     @app_commands.check(slash_mod_check)
-    async def slash_ban(self, interaction: discord.Interaction, member: discord.Member, reason: str = None):
-        ok, msg = await self._ban(interaction.user, member, reason, interaction.guild)
+    async def slash_ban(self, interaction: discord.Interaction, user: discord.User, reason: str = None):
+        ok, msg = await self._ban(interaction.user, user, reason, interaction.guild)
         await interaction.response.send_message(msg, ephemeral=not ok)
 
     @app_commands.command(name="unban", description="Unban a user by their ID")
@@ -243,8 +245,17 @@ class Moderation(commands.Cog):
 
     @commands.command(name="ban")
     @moderator_check()
-    async def prefix_ban(self, ctx, member: discord.Member, *, reason=None):
-        _, msg = await self._ban(ctx.author, member, reason, ctx.guild)
+    async def prefix_ban(self, ctx, target: str, *, reason=None):
+        user = None
+        try:
+            user = await commands.MemberConverter().convert(ctx, target)
+        except commands.MemberNotFound:
+            try:
+                user = await self.bot.fetch_user(int(target.strip().lstrip("<@!").rstrip(">")))
+            except (ValueError, discord.NotFound):
+                await ctx.send("❌ User not found.")
+                return
+        _, msg = await self._ban(ctx.author, user, reason, ctx.guild)
         await ctx.send(msg)
 
     @commands.command(name="unban")
