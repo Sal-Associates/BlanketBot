@@ -33,6 +33,10 @@ class Moderation(commands.Cog):
         if isinstance(user, discord.Member) and not role_check(actor, user):
             return False, "You can't ban someone with a higher or equal role."
         try:
+            await user.send(f"You have been banned from **{guild.name}**. Reason: {reason or 'No reason provided'}")
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+        try:
             await guild.ban(user, reason=reason, delete_message_seconds=43200)
         except discord.Forbidden:
             return False, "I don't have permission to ban that user."
