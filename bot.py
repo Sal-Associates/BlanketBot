@@ -115,6 +115,7 @@ async def main():
             "cogs.channel",
             "cogs.automod",
             "cogs.lockdown",
+            "cogs.scam_detection",
         ]:
             await bot.load_extension(cog)
         await bot.start(token)
