@@ -1,9 +1,12 @@
+import io
 import os
+import aiohttp
 import discord
 from discord.ext import commands
 import db
 
 _FALLBACK_LOG_CHANNEL = int(os.getenv("LOG_CHANNEL_ID", 0))
+IMAGE_CACHE_MAX = 500
 
 ACTION_COLORS = {
     "kick":             discord.Color.orange(),
@@ -24,6 +27,7 @@ ACTION_COLORS = {
 class ModLog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._image_cache: dict[int, list[tuple[bytes, str]]] = {}
 
     def _log_channel_id(self, guild_id: int) -> int:
         settings = db.get_guild_settings(guild_id)
@@ -31,27 +35,25 @@ class ModLog(commands.Cog):
             return settings["log_channel"]
         return _FALLBACK_LOG_CHANNEL
 
-    async def post(self, guild: discord.Guild, embed: discord.Embed):
+    async def post(self, guild: discord.Guild, embed: discord.Embed, files: list = None):
         channel_id = self._log_channel_id(guild.id)
         if not channel_id:
             return
         channel = guild.get_channel(channel_id)
         if channel:
-            await channel.send(embed=embed)
+            await channel.send(embed=embed, files=files or [])
 
     @commands.Cog.listener()
     async def on_mod_action(self, action: str, moderator, target, reason: str | None, guild: discord.Guild, duration: str = None):
-        if reason and len(reason) > 1000:
-            reason = reason[:1000]
         with db.get_db() as conn:
             case_number = db.next_case_number(conn, guild.id)
             conn.execute(
-                "INSERT INTO mod_actions (guild_id, case_number, action, target_id, moderator_id, reason, duration) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (guild.id, case_number, action, target.id, moderator.id, reason, duration)
+                "INSERT INTO mod_actions (guild_id, case_number, action, target_id, moderator_id, moderator_display, reason, duration) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (guild.id, case_number, action, target.id, moderator.id, None, reason, duration)
             )
 
         embed = discord.Embed(
-            title=f"Case #{case_number} — {action.replace('_', ' ').capitalize()}",
+            title=f"Case #{case_number} \u2014 {action.replace('_', ' ').capitalize()}",
             color=ACTION_COLORS.get(action, discord.Color.blurple()),
             timestamp=discord.utils.utcnow()
         )
@@ -72,6 +74,23 @@ class ModLog(commands.Cog):
             embed.add_field(name="Reason", value=reason, inline=False)
 
         await self.post(guild, embed)
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if message.author.bot or not message.guild:
+            return
+        images = [a for a in message.attachments if a.content_type and a.content_type.startswith("image/")]
+        if not images:
+            return
+        async with aiohttp.ClientSession() as session:
+            cached = []
+            for att in images:
+                async with session.get(att.url) as resp:
+                    data = await resp.read()
+                cached.append((data, att.filename))
+        if len(self._image_cache) >= IMAGE_CACHE_MAX:
+            del self._image_cache[next(iter(self._image_cache))]
+        self._image_cache[message.id] = cached
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
@@ -99,6 +118,7 @@ class ModLog(commands.Cog):
     async def on_message_delete(self, message: discord.Message):
         if message.author.bot or not message.guild:
             return
+        cached = self._image_cache.pop(message.id, None)
         embed = discord.Embed(
             title="Message deleted",
             description=message.content or "*[no text content]*",
@@ -107,7 +127,8 @@ class ModLog(commands.Cog):
         )
         embed.add_field(name="Author", value=f"{message.author} ({message.author.id})", inline=True)
         embed.add_field(name="Channel", value=message.channel.mention, inline=True)
-        await self.post(message.guild, embed)
+        files = [discord.File(io.BytesIO(data), filename=name) for data, name in cached] if cached else []
+        await self.post(message.guild, embed, files=files)
 
     @commands.Cog.listener()
     async def on_message_edit(self, before: discord.Message, after: discord.Message):

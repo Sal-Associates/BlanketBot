@@ -17,3 +17,4 @@ bot.db
 # General
 .DS_Store
 Thumbs.db
+scam_hashes.txt

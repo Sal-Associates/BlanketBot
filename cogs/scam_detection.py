@@ -29,14 +29,20 @@ def save_hashes(new):
         for h in new: f.write(h + "\n")
 
 
-async def run_ocr(message, images):
-    known_hashes = load_hashes()
-    image_hashes, matches, all_text = [], {}, ""
+class ScamDetection(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
 
-    async with aiohttp.ClientSession() as session:
-        for i, att in enumerate(images):
-            async with session.get(att.url) as resp:
-                data = await resp.read()
+    def _log_channel(self, guild_id):
+        settings = db.get_guild_settings(guild_id)
+        channel_id = (settings and settings["log_channel"]) or int(os.getenv("LOG_CHANNEL_ID", 0))
+        return self.bot.get_channel(channel_id) if channel_id else None
+
+    async def _run_ocr(self, message, cached: list[tuple[bytes, str]]):
+        known_hashes = load_hashes()
+        image_hashes, matches, all_text = [], {}, ""
+
+        for i, (data, filename) in enumerate(cached):
             h = hashlib.sha256(data).hexdigest()
             image_hashes.append(h)
 
@@ -62,10 +68,8 @@ async def run_ocr(message, images):
             confidence = 1 - 1 / (1 + len(matches) ** 2 / len(SCAM_WORDS) * (1 + total_hits / 10))
 
             if confidence >= TRIGGER_LEVEL:
-                for remaining in images[i + 1:]:
-                    async with session.get(remaining.url) as resp:
-                        rdata = await resp.read()
-                    image_hashes.append(hashlib.sha256(rdata).hexdigest())
+                for remaining_data, _ in cached[i + 1:]:
+                    image_hashes.append(hashlib.sha256(remaining_data).hexdigest())
                 save_hashes([h for h in image_hashes if h not in known_hashes])
 
                 match_list = ", ".join(f"{w} (x{c})" for w, c in matches.items())
@@ -75,17 +79,7 @@ async def run_ocr(message, images):
                 embed.add_field(name="Matches", value=match_list, inline=False)
                 return True, embed
 
-    return False, None
-
-
-class ScamDetection(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-
-    def _log_channel(self, guild_id):
-        settings = db.get_guild_settings(guild_id)
-        channel_id = (settings and settings["log_channel"]) or int(os.getenv("LOG_CHANNEL_ID", 0))
-        return self.bot.get_channel(channel_id) if channel_id else None
+        return False, None
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -94,8 +88,17 @@ class ScamDetection(commands.Cog):
             images = [a for a in message.attachments if a.content_type and a.content_type.startswith("image/")]
             if not images: return
 
-            is_scam, embed = await run_ocr(message, images)
+            async with aiohttp.ClientSession() as session:
+                cached = []
+                for att in images:
+                    async with session.get(att.url) as resp:
+                        data = await resp.read()
+                    cached.append((data, att.filename))
+
+            is_scam, embed = await self._run_ocr(message, cached)
             if not is_scam: return
+
+            image_files = [discord.File(io.BytesIO(data), filename=name) for data, name in cached]
 
             try:
                 await message.author.timeout(timedelta(seconds=60), reason="Blocking scam")
@@ -107,7 +110,8 @@ class ScamDetection(commands.Cog):
 
             log_channel = self._log_channel(message.guild.id)
             if log_channel:
-                await log_channel.send(embed=embed)
+                await log_channel.send(embed=embed, files=image_files)
+
         except Exception:
             print(f"[scam] error:\n{traceback.format_exc()}")
 
