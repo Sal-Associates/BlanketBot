@@ -232,3 +232,4 @@ Automod is disabled by default. Enable it with `?automod on`.
 
 - **K1ngblanket**
 - **LaiZBoi**
+- **Tilley8**
