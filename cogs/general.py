@@ -26,6 +26,7 @@ MOD_TOOLS = [
     ("modlogs",          "Mod history for a user"),
     ("modstats",         "Mod stats for a moderator or server"),
     ("case",             "Look up a specific case by number"),
+    ("pin",              "Pin a message (link, ID, or reply with ?pin)"),
     ("whois",            "User info + mod history"),
     ("memberrole give",  "Give a member the configured member role"),
 ]
@@ -47,6 +48,9 @@ ADMIN_COMMANDS = [
     ("muterole off",                     "Clear mute role (falls back to Discord timeout)"),
     ("staff mod add/del/list",           "Manage moderator roles"),
     ("staff admin add/del/list",         "Manage admin roles"),
+]
+
+AUTOMOD_COMMANDS = [
     ("automod on/off",                   "Enable or disable automod"),
     ("automod antispam/anticaps/antiinvite/antimention on/off", "Toggle checks"),
     ("automod word add/del/list",        "Manage banned words"),
@@ -80,6 +84,7 @@ class General(commands.Cog):
         embed.add_field(name="Mod Tools",    value=_fmt(MOD_TOOLS),                     inline=False)
         embed.add_field(name="Info",         value=_fmt(INFO_COMMANDS, show_slash=False), inline=False)
         embed.add_field(name="Admin",        value=_fmt(ADMIN_COMMANDS, show_slash=False), inline=False)
+        embed.add_field(name="Automod and Lockdown", value=_fmt(AUTOMOD_COMMANDS, show_slash=False), inline=False)
         await ctx.send(embed=embed)
 
     @commands.command(name="about")

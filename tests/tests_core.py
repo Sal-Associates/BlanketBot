@@ -178,3 +178,19 @@ class TestPurgeFilters:
         with_embed = _msg(content="hello", embeds=[MagicMock()])
         with_attachment = _msg(content="hello", attachments=[MagicMock()])
         assert _filter_messages([plain, with_embed, with_attachment], "text", None, 10) == [plain]
+
+
+from cogs.channel import MESSAGE_LINK_RE
+
+
+class TestMessageLinkRegex:
+    def test_standard_link(self):
+        m = MESSAGE_LINK_RE.search("https://discord.com/channels/1/2/3")
+        assert m.groups() == ("1", "2", "3")
+
+    def test_legacy_and_surrounding_text(self):
+        m = MESSAGE_LINK_RE.search("see <https://discordapp.com/channels/10/20/30> thanks")
+        assert m.groups() == ("10", "20", "30")
+
+    def test_plain_id_does_not_match(self):
+        assert MESSAGE_LINK_RE.search("123456789012345678") is None

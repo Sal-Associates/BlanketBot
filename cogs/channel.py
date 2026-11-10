@@ -1,8 +1,13 @@
+import re
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 import db
 from checks import moderator_check, administrator_check, slash_mod_check
+
+
+MESSAGE_LINK_RE = re.compile(r"discord(?:app)?\.com/channels/(\d+)/(\d+)/(\d+)")
 
 
 class Channel(commands.Cog):
@@ -89,6 +94,72 @@ class Channel(commands.Cog):
         await target.edit(slowmode_delay=seconds)
         msg = f"Slowmode disabled in {target.mention}." if seconds == 0 else f"Slowmode set to **{seconds}s** in {target.mention}."
         await ctx.send(msg)
+
+    async def _resolve_message(self, guild, default_channel, ref: str):
+        ref = ref.strip()
+        match = MESSAGE_LINK_RE.search(ref)
+        if match:
+            guild_id, channel_id, message_id = (int(g) for g in match.groups())
+            if guild_id != guild.id:
+                return None, "That message link is from a different server."
+            channel = guild.get_channel_or_thread(channel_id)
+            if channel is None:
+                return None, "I can't find that channel."
+        elif ref.isdigit():
+            channel, message_id = default_channel, int(ref)
+        else:
+            return None, "Provide a message link or a message ID."
+        try:
+            return await channel.fetch_message(message_id), None
+        except discord.NotFound:
+            return None, "Message not found."
+        except discord.Forbidden:
+            return None, "I can't read that channel."
+
+    async def _pin(self, actor, message):
+        if message.pinned:
+            return False, "That message is already pinned."
+        try:
+            await message.pin(reason=f"Pinned by {actor}")
+        except discord.Forbidden:
+            return False, "I don't have permission to pin messages there. The bot needs the Pin Messages permission."
+        except discord.HTTPException as e:
+            if e.code == 30003:
+                return False, "That channel has reached its pin limit."
+            return False, f"Pin failed: {e.text}"
+        return True, f"📌 Pinned [message]({message.jump_url})."
+
+    @app_commands.command(name="pin", description="Pin a message")
+    @app_commands.describe(message="Message link or ID (an ID is looked up in the current channel)")
+    @app_commands.check(slash_mod_check)
+    async def slash_pin(self, interaction: discord.Interaction, message: str):
+        msg, err = await self._resolve_message(interaction.guild, interaction.channel, message)
+        if err:
+            await interaction.response.send_message(f"❌ {err}", ephemeral=True)
+            return
+        ok, text = await self._pin(interaction.user, msg)
+        await interaction.response.send_message(text, ephemeral=not ok)
+
+    @commands.command(name="pin")
+    @moderator_check()
+    async def prefix_pin(self, ctx, *, message: str = None):
+        if message is None:
+            ref = ctx.message.reference
+            if not ref or not ref.message_id:
+                await ctx.send("❌ Reply to a message, or provide a message link or ID.")
+                return
+            try:
+                msg = await ctx.channel.fetch_message(ref.message_id)
+            except discord.HTTPException:
+                await ctx.send("❌ Couldn't fetch the replied message.")
+                return
+        else:
+            msg, err = await self._resolve_message(ctx.guild, ctx.channel, message)
+            if err:
+                await ctx.send(f"❌ {err}")
+                return
+        _, text = await self._pin(ctx.author, msg)
+        await ctx.send(text)
 
     async def cog_command_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):

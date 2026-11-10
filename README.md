@@ -23,7 +23,7 @@ pip install -r requirements.txt
 1. Create a bot at [discord.com/developers/applications](https://discord.com/developers/applications)
 2. Under **Bot**, enable: **Server Members Intent**, **Message Content Intent**
 3. Under **OAuth2 → URL Generator**, select scopes: `bot`, `applications.commands`
-4. Select permissions: Manage Roles, Manage Channels, Kick Members, Ban Members, Moderate Members, Manage Messages, Read Message History, Attach Files, View Audit Log
+4. Select permissions: Manage Roles, Manage Channels, Kick Members, Ban Members, Moderate Members, Manage Messages, Pin Messages, Read Message History, Attach Files, View Audit Log
 5. Copy `.env.example` to `.env` and fill in your token
 6. Run: `docker compose up -d`
 
@@ -34,7 +34,7 @@ The image includes Tesseract. The project folder is mounted at `/data`, so `bot.
 1. Create a bot at [discord.com/developers/applications](https://discord.com/developers/applications)
 2. Under **Bot**, enable: **Server Members Intent**, **Message Content Intent**
 3. Under **OAuth2 → URL Generator**, select scopes: `bot`, `applications.commands`
-4. Select permissions: Manage Roles, Manage Channels, Kick Members, Ban Members, Moderate Members, Manage Messages, Read Message History, Attach Files, View Audit Log
+4. Select permissions: Manage Roles, Manage Channels, Kick Members, Ban Members, Moderate Members, Manage Messages, Pin Messages, Read Message History, Attach Files, View Audit Log
 5. Copy `.env.example` to `.env` and fill in your token
 6. Install Tesseract OCR with your package manager
 7. Run: `python3 bot.py`
@@ -109,11 +109,12 @@ Slash equivalents: `/kick`, `/ban`, `/unban`, `/mute`, `/unmute`, `/softban`, `/
 | `?channel lock [#channel]` | Lock a channel (deny @everyone send messages) |
 | `?channel unlock [#channel]` | Unlock a channel, restoring its previous permission state |
 | `?channel slowmode <seconds> [#channel]` | Set slowmode (0 to disable) |
+| `?pin [message link or ID]` | Pin a message. Reply to a message with `?pin` to pin it. An ID is looked up in the current channel. |
 
 **Purge filters:** `user @user`, `match <text>`, `not <text>`, `startswith <text>`, `endswith <text>`, `links`, `invites`, `images`, `mentions`, `embeds`, `bots`, `humans`, `text`  
 Default (no filter): deletes up to 100 recent messages. Messages older than 14 days are skipped.
 
-Slash equivalents: `/note`, `/notes`, `/notedel`, `/purge`, `/lock`, `/unlock`, `/slowmode`.
+Slash equivalents: `/note`, `/notes`, `/notedel`, `/purge`, `/lock`, `/unlock`, `/slowmode`, `/pin`.
 
 ---
 
@@ -304,6 +305,7 @@ python -m pytest tests/
 | Ban Members | Ban, unban, softban |
 | Moderate Members | Discord timeout (scam detection, mute fallback) |
 | Manage Messages | Purge, automod and scam message deletion |
+| Pin Messages | Pin |
 | Read Message History | Purge |
 | Attach Files | Deleted image logs |
 | View Audit Log | (optional) Audit log features |
