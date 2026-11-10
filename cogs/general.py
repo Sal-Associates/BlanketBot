@@ -3,7 +3,7 @@ from discord.ext import commands
 
 MOD_ACTIONS = [
     ("kick",          "Kick a member"),
-    ("ban",           "Ban a member"),
+    ("ban",           "Ban a member (or user ID for users who have left)"),
     ("unban",         "Unban a user by ID"),
     ("softban",       "Ban + unban, deletes 7 days of messages"),
     ("mute",          "Mute a member (role-based; duration optional)"),
@@ -27,6 +27,7 @@ MOD_TOOLS = [
     ("modstats",         "Mod stats for a moderator or server"),
     ("case",             "Look up a specific case by number"),
     ("whois",            "User info + mod history"),
+    ("memberrole give",  "Give a member the configured member role"),
 ]
 
 INFO_COMMANDS = [
@@ -38,6 +39,8 @@ INFO_COMMANDS = [
 
 ADMIN_COMMANDS = [
     ("settings logchannel",              "Set log channel (or `off` to clear)"),
+    ("memberrole set @role",             "Set an existing role as the member role"),
+    ("memberrole off",                   "Clear the member role"),
     ("muterole",                         "View current mute role"),
     ("muterole create",                  "Create a Muted role and apply channel permissions"),
     ("muterole set @role",               "Use an existing role as the mute role"),

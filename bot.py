@@ -106,6 +106,7 @@ async def main():
             "cogs.staff",
             "cogs.moderation",
             "cogs.muterole",
+            "cogs.memberrole",
             "cogs.mod_log",
             "cogs.modlogs",
             "cogs.notes",
@@ -113,9 +114,9 @@ async def main():
             "cogs.whois",
             "cogs.info",
             "cogs.channel",
+            "cogs.scam_detection",
             "cogs.automod",
             "cogs.lockdown",
-            "cogs.scam_detection",
         ]:
             await bot.load_extension(cog)
         await bot.start(token)

@@ -21,6 +21,7 @@ def init_db():
                 guild_id          INTEGER PRIMARY KEY,
                 log_channel       INTEGER,
                 mute_role_id      INTEGER,
+                member_role_id    INTEGER,
                 automod_enabled   INTEGER DEFAULT 0,
                 anti_spam         INTEGER DEFAULT 0,
                 anti_caps         INTEGER DEFAULT 0,
@@ -109,6 +110,7 @@ def init_db():
         for sql in [
             "ALTER TABLE mod_actions ADD COLUMN case_number INTEGER",
             "ALTER TABLE guild_settings ADD COLUMN mute_role_id INTEGER",
+            "ALTER TABLE guild_settings ADD COLUMN member_role_id INTEGER",
             "ALTER TABLE mod_actions ADD COLUMN moderator_display TEXT",
         ]:
             try:
